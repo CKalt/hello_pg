@@ -1,0 +1,5 @@
+#!/bin/sh
+cargo run --release 2>&1 | tee pgr.out
+#export RAYON_NUM_THREADS=20; cargo run --release 2>&1 | tee pgr.out
+#cargo run --release > pgr.out
+vi pgr.out
