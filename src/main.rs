@@ -1,4 +1,5 @@
 use postgres::{error::Error, Client, NoTls};
+use serde_json::{Number, Value};
 
 #[derive(Debug)]
 struct SaleWithProduct {
@@ -37,7 +38,9 @@ fn create_db() -> Result<Client, Error> {
         "CREATE TABLE Products (
             id INTEGER PRIMARY KEY,
             category TEXT NOT NULL,
-            name TEXT NOT NULL UNIQUE)",
+            name TEXT NOT NULL UNIQUE,
+            sales_text text null,
+            sales_jsonb jsonb null)",
         &[],
     )?;
     conn.execute(
@@ -52,12 +55,43 @@ fn create_db() -> Result<Client, Error> {
     Ok(conn)
 }
 
+fn grab_json_text_from_sample_file() -> String {
+    // Code below based on sample from "Creative Projects for Rust Programmers"
+    let input_path = "sales.json".to_string();
+
+    let mut sales_and_products = {
+        // Load the first file into a string.
+        let sales_and_products_text = std::fs::read_to_string(&input_path).unwrap();
+
+        // Parse the string into a dynamically-typed JSON structure.
+        serde_json::from_str::<Value>(&sales_and_products_text).unwrap()
+    };
+
+    // Get the field of the structure
+    // containing the weight of the sold oranges.
+    if let Value::Number(n) = &sales_and_products["sales"][1]["quantity"] {
+        // Increment it and store it back into the structure.
+        sales_and_products["sales"][1]["quantity"] =
+            Value::Number(Number::from_f64(n.as_f64().unwrap() + 1.5).unwrap());
+    }
+
+    // Save the JSON structure into the other file.
+    serde_json::to_string(&sales_and_products).unwrap()
+}
+
 fn populate_db(conn: &mut Client) -> Result<(), Error> {
+//    let sales_json = r#"{ "name" : "Julia" }"#;
+    let sales_json = grab_json_text_from_sample_file();
     conn.execute(
         "INSERT INTO Products (
-            id, category, name
-            ) VALUES ($1, $2, $3)",
-        &[&1, &"fruit", &"pears"],
+            id, category, name, sales_text
+            ) VALUES ($1, $2, $3, $4)",
+        &[&1, &"fruit", &"pears", &sales_json],
+    )?;
+    conn.execute(
+        "UPDATE Products 
+            SET sales_jsonb = cast (sales_text as jsonb)
+          WHERE sales_jsonb is null", &[]
     )?;
     conn.execute(
         "INSERT INTO Sales (
