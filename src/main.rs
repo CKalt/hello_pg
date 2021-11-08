@@ -12,12 +12,12 @@ struct SaleWithProduct {
 fn create_db() -> Result<Client, Error> {
     let username = "chris";
     let password = "hello";
-    let host = "localhost";
+//    let host = "localhost";
+    let host = "p3d-mxdb-01.cluster-cwxj5p0ankri.us-west-2.rds.amazonaws.com";
     let port = "5432";
     let database = "sports3d";
-
-    let mut conn = Client::connect(
-        &format!(
+    let connect_str = 
+        format!(
             "postgres://{}{}{}@{}{}{}{}{}",
             username,
             if password.is_empty() { "" } else { ":" },
@@ -27,9 +27,10 @@ fn create_db() -> Result<Client, Error> {
             port,
             if database.is_empty() { "" } else { "/" },
             database
-        ),
-        NoTls,
-    )?;
+        );
+    println!("connect_str={}", connect_str);
+
+    let mut conn = Client::connect(&connect_str, NoTls)?;
 
     let _ = conn.execute("DROP TABLE Sales", &[]);
     let _ = conn.execute("DROP TABLE Products", &[]);
