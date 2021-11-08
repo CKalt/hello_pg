@@ -46,7 +46,7 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
     if opt.jsonb_only {
         conn.execute(
             "CREATE TABLE Products (
-                id INTEGER PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 category TEXT NOT NULL,
                 name TEXT NOT NULL UNIQUE,
                 sales jsonb null)",
@@ -55,7 +55,7 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
     } else {
         conn.execute(
             "CREATE TABLE Products (
-                id INTEGER PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 category TEXT NOT NULL,
                 name TEXT NOT NULL UNIQUE,
                 sales_text text null,
@@ -63,6 +63,10 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
             &[],
         )?;
     }
+    conn.execute(
+        "alter sequence products_id_seq start with 1",
+        &[],
+    )?;
     conn.execute(
         "CREATE TABLE Sales (
             id TEXT PRIMARY KEY,
@@ -129,20 +133,38 @@ fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
 
     if opt.jsonb_only {
         let sales_json = grab_json_from_sample_file();
-        conn.execute(
-            "INSERT INTO Products (
-                id, category, name, sales
-                ) VALUES ($1, $2, $3, $4)",
-            &[&1, &"fruit", &"pears", &sales_json],
-        )?;
+        match conn.query(
+                "INSERT INTO Products (
+                    category, name, sales
+                    ) VALUES ($1, $2, $3)
+                 RETURNING id",
+                &[&"fruit", &"pears", &sales_json],
+              )?.iter().nth(0) {
+                Some(row) => {
+                    let id: i32 = row.get(0);
+                    println!("inserted product id = {}", id);
+                },
+                None => {
+                    println!("no row returned with insert with returing clause");
+                },
+        }
     } else {
         let sales_json_text = grab_json_text_from_sample_file();
-        conn.execute(
+        match conn.query(
             "INSERT INTO Products (
-                id, category, name, sales_text
-                ) VALUES ($1, $2, $3, $4)",
-            &[&1, &"fruit", &"pears", &sales_json_text],
-        )?;
+                category, name, sales_text
+                ) VALUES ($1, $2, $3)
+             RETURNING id",
+            &[&"fruit", &"pears", &sales_json_text],
+        )?.iter().nth(0) {
+                Some(row) => {
+                    let id: i32 = row.get(0);
+                    println!("inserted product id = {}", id);
+                },
+                None => {
+                    println!("no row returned with insert with returing clause");
+                },
+        }
         conn.execute(
             "UPDATE Products 
                 SET sales_jsonb = cast (sales_text as jsonb)
