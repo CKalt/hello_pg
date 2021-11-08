@@ -188,6 +188,12 @@ fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
     Ok(())
 }
 
+
+#[derive(Debug)]
+struct Server {
+    server_id: i32,                                    // 0
+}
+
 fn print_db(conn: &mut Client) -> Result<(), Error> {
     for row in &conn.query(
         "SELECT p.name, s.unit, s.quantity, s.sale_date
@@ -212,6 +218,22 @@ fn print_db(conn: &mut Client) -> Result<(), Error> {
             sale_with_product.name
         );
     }
+
+    let query = r#"
+    SELECT serverId                 -- 0
+      FROM p3d_server"#;
+
+    let opt_server =
+        match &conn.query(query, &[])?.iter().nth(0) {
+            Some(row) =>
+                Some(Server {
+                    server_id:                  row.get(0),
+                }),
+            None => None
+        };
+
+    println!("server = {:?}", opt_server);
+
     Ok(())
 }
 
