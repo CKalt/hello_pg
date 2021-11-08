@@ -1,0 +1,8 @@
+/target
+.idea
+*.out
+src/*.log
+src/*.out
+diff.txt
+foo*
+*.log
