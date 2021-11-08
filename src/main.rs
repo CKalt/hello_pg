@@ -23,7 +23,8 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
     let username = "chris";
     let password = "hello";
 //    let host = "localhost";
-    let host = "p3d-mxdb-01.cluster-cwxj5p0ankri.us-west-2.rds.amazonaws.com";
+//    let host = "p3d-mxdb-01.cluster-cwxj5p0ankri.us-west-2.rds.amazonaws.com";
+    let host = "localhost";
     let port = "5432";
     let database = "sports3d";
     let connect_str = 
