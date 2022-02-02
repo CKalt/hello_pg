@@ -1,4 +1,4 @@
-use postgres::{error::Error, Client, NoTls};
+use tokio_postgres::{error::Error, Client, NoTls};
 use serde_json::{Number, Value};
 use structopt::StructOpt;
 
@@ -20,7 +20,17 @@ struct SaleWithProduct {
     date: i64,
 }
 
-fn create_db(opt: &Opt) -> Result<Client, Error> {
+async fn connect_db(connect_str: &str) -> Result<Client, Error> {
+    let (client, connection) = tokio_postgres::connect(connect_str, NoTls).await?;
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    Ok(client)
+}
+
+async fn create_db(opt: &Opt) -> Result<Client, Error> {
     let username = "chris";
     let password = "hello";
 //    let host = "localhost";
@@ -42,21 +52,22 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
         );
     println!("connect_str={}", connect_str);
 
-    let mut conn = Client::connect(&connect_str, NoTls)?;
+    let client = connect_db(&connect_str).await?;
 
-    let _ = conn.execute("DROP TABLE Sales", &[]);
-    let _ = conn.execute("DROP TABLE Products", &[]);
+    let _ = client.execute("DROP TABLE Sales", &[]).await?;
+    let _ = client.execute("DROP TABLE Products", &[]).await?;
+
     if opt.jsonb_only {
-        conn.execute(
+        client.execute(
             "CREATE TABLE Products (
                 id SERIAL PRIMARY KEY,
                 category TEXT NOT NULL,
                 name TEXT NOT NULL UNIQUE,
                 sales jsonb null)",
             &[],
-        )?;
+        ).await?;
     } else {
-        conn.execute(
+        client.execute(
             "CREATE TABLE Products (
                 id SERIAL PRIMARY KEY,
                 category TEXT NOT NULL,
@@ -64,13 +75,13 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
                 sales_text text null,
                 sales_jsonb jsonb null)",
             &[],
-        )?;
+        ).await?;
     }
-    conn.execute(
+    client.execute(
         "alter sequence products_id_seq start with 1",
         &[],
-    )?;
-    conn.execute(
+    ).await?;
+    client.execute(
         "CREATE TABLE Sales (
             id TEXT PRIMARY KEY,
             product_id INTEGER NOT NULL REFERENCES Products,
@@ -78,8 +89,8 @@ fn create_db(opt: &Opt) -> Result<Client, Error> {
             quantity DOUBLE PRECISION NOT NULL,
             unit TEXT NOT NULL)",
         &[],
-    )?;
-    Ok(conn)
+    ).await?;
+    Ok(client)
 }
 
 fn grab_json_text_from_sample_file() -> String {
@@ -131,18 +142,18 @@ fn grab_json_from_sample_file() -> serde_json::Value {
     sales_and_products
 }
 
-fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
+async fn populate_db(client: &Client, opt: &Opt) -> Result<(), Error> {
 //    let sales_json = r#"{ "name" : "Julia" }"#;
 
     if opt.jsonb_only {
         let sales_json = grab_json_from_sample_file();
-        match conn.query(
+        match client.query(
                 "INSERT INTO Products (
                     category, name, sales
                     ) VALUES ($1, $2, $3)
                  RETURNING id",
                 &[&"fruit", &"pears", &sales_json],
-              )?.iter().nth(0) {
+              ).await?.iter().nth(0) {
                 Some(row) => {
                     let id: i32 = row.get(0);
                     println!("inserted product id = {}", id);
@@ -153,13 +164,13 @@ fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
         }
     } else {
         let sales_json_text = grab_json_text_from_sample_file();
-        match conn.query(
+        match client.query(
             "INSERT INTO Products (
                 category, name, sales_text
                 ) VALUES ($1, $2, $3)
              RETURNING id",
             &[&"fruit", &"pears", &sales_json_text],
-        )?.iter().nth(0) {
+        ).await?.iter().nth(0) {
                 Some(row) => {
                     let id: i32 = row.get(0);
                     println!("inserted product id = {}", id);
@@ -168,14 +179,14 @@ fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
                     println!("no row returned with insert with returing clause");
                 },
         }
-        conn.execute(
+        client.execute(
             "UPDATE Products 
                 SET sales_jsonb = cast (sales_text as jsonb)
               WHERE sales_jsonb is null", &[]
-        )?;
+        ).await?;
     }
 
-    conn.execute(
+    client.execute(
         "INSERT INTO Sales (
             id, product_id, sale_date, quantity, unit
             ) VALUES ($1, $2, $3, $4, $5)",
@@ -185,7 +196,7 @@ fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
                 &7.439,                 // quanity
                 &"Kg"                   // unit
         ],
-    )?;
+    ).await?;
     Ok(())
 }
 
@@ -196,15 +207,15 @@ struct Server {
     server_id: i32,                                    // 0
 }
 
-fn print_db(conn: &mut Client) -> Result<(), Error> {
-    for row in &conn.query(
+async fn print_db(client: &Client) -> Result<(), Error> {
+    for row in &client.query(
         "SELECT p.name, s.unit, s.quantity, s.sale_date
         FROM Sales s
         LEFT JOIN Products p
         ON p.id = s.product_id
         ORDER BY s.sale_date",
         &[],
-    )? {
+    ).await? {
         let sale_with_product = SaleWithProduct {
             category: "".to_string(),
             name: row.get(0),
@@ -226,7 +237,7 @@ fn print_db(conn: &mut Client) -> Result<(), Error> {
       FROM p3d_server"#;
 
     let opt_server =
-        match &conn.query(query, &[])?.iter().nth(0) {
+        match &client.query(query, &[]).await?.iter().nth(0) {
             Some(row) =>
                 Some(Server {
                     server_id:                  row.get(0),
@@ -239,12 +250,13 @@ fn print_db(conn: &mut Client) -> Result<(), Error> {
     Ok(())
 }
 
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     let opt = Opt::from_args();
     println!("opt = {:?}", opt);
 
-    let mut conn = create_db(&opt)?;
-    populate_db(&mut conn, &opt)?;
-    print_db(&mut conn)?;
+    let client = create_db(&opt).await?;
+    populate_db(&client, &opt).await?;
+    print_db(&client).await?;
     Ok(())
 }
