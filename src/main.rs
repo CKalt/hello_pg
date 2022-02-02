@@ -11,6 +11,7 @@ struct Opt {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct SaleWithProduct {
     category: String,
     name: String,
@@ -190,6 +191,7 @@ fn populate_db(conn: &mut Client, opt: &Opt) -> Result<(), Error> {
 
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Server {
     server_id: i32,                                    // 0
 }
